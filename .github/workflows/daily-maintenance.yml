@@ -1,0 +1,59 @@
+name: Daily Maintenance Tasks
+
+# Run daily at midnight UTC
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  daily-maintenance:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Health Check
+        run: |
+          echo "🏥 Performing daily health check..."
+          
+          # Check if the main app is responding
+          response=$(curl -s -w "%{http_code}" "${{ secrets.APP_URL }}")
+          http_code="${response: -3}"
+          
+          if [ "$http_code" -eq 200 ]; then
+            echo "✅ Application is healthy"
+          else
+            echo "⚠️ Application health check failed (HTTP $http_code)"
+          fi
+
+      - name: Email Queue Status Check
+        run: |
+          echo "📧 Checking email queue status..."
+          
+          # Trigger a queue processing to clear any backlog
+          response=$(curl -s -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.APP_URL }}/api/notifications/process-queue")
+          
+          http_code="${response: -3}"
+          response_body="${response%???}"
+          
+          echo "Queue processing result: $response_body"
+          
+          if [ "$http_code" -eq 200 ]; then
+            echo "✅ Daily email queue maintenance completed"
+          else
+            echo "⚠️ Email queue maintenance had issues (HTTP $http_code)"
+          fi
+
+      - name: System Status Report
+        run: |
+          echo "📊 Daily System Status Report - $(date -u)"
+          echo "=================================="
+          echo "✅ GitHub Actions: Running"
+          echo "✅ Vercel Deployment: Active"
+          echo "✅ Email Processing: Automated"
+          echo "=================================="

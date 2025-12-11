@@ -143,7 +143,33 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Allow GET for health checks
-export async function GET() {
-  return NextResponse.json({ status: 'Email queue processor is running' });
+// Allow GET for health checks and simple triggering
+export async function GET(request: NextRequest) {
+  try {
+    // For GET requests, check authorization via query parameter or header
+    const authHeader = request.headers.get('authorization');
+    const authQuery = new URL(request.url).searchParams.get('auth');
+    const expectedToken = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET;
+    
+    const isAuthorized = 
+      (authHeader && authHeader === `Bearer ${expectedToken}`) ||
+      (authQuery && authQuery === expectedToken);
+
+    if (!expectedToken || !isAuthorized) {
+      return NextResponse.json({ 
+        status: 'Email queue processor is running',
+        message: 'Health check OK - Authentication required for processing'
+      });
+    }
+
+    // If authorized, process the queue (same logic as POST)
+    return POST(request);
+    
+  } catch (error) {
+    console.error('GET queue processing error:', error);
+    return NextResponse.json({ 
+      status: 'error',
+      message: 'Health check failed'
+    }, { status: 500 });
+  }
 }

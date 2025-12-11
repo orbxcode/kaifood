@@ -1,0 +1,56 @@
+name: Process Email Notifications
+
+# Schedule: Run every 5 minutes during business hours (more frequent when needed)
+# and every 30 minutes during off-hours to save on API calls
+on:
+  schedule:
+    # Every 5 minutes during business hours (6 AM - 10 PM UTC)
+    - cron: '*/5 6-22 * * *'
+    # Every 30 minutes during off-hours (10 PM - 6 AM UTC)  
+    - cron: '*/30 22-23,0-5 * * *'
+  
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  process-email-queue:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Process Email Notifications
+        run: |
+          echo "🚀 Processing email notification queue..."
+          
+          # Make the API call to process email queue
+          response=$(curl -s -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.APP_URL }}/api/notifications/process-queue")
+          
+          # Extract HTTP status code (last 3 characters)
+          http_code="${response: -3}"
+          response_body="${response%???}"
+          
+          echo "📊 Response Status: $http_code"
+          echo "📄 Response Body: $response_body"
+          
+          # Check if the request was successful
+          if [ "$http_code" -eq 200 ]; then
+            echo "✅ Email queue processed successfully"
+          else
+            echo "❌ Failed to process email queue (HTTP $http_code)"
+            echo "Response: $response_body"
+            exit 1
+          fi
+
+      - name: Log Completion
+        if: success()
+        run: |
+          echo "🎉 Email notification processing completed at $(date -u)"
+          
+      - name: Handle Failure
+        if: failure()
+        run: |
+          echo "💥 Email notification processing failed at $(date -u)"
+          echo "This will be retried on the next scheduled run"
