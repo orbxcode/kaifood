@@ -1,9 +1,20 @@
 import { Redis } from "@upstash/redis"
 
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL!,
-  token: process.env.KV_REST_API_TOKEN!,
-})
+// Initialize Redis (optional)
+let redis: Redis | null = null
+try {
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN
+  
+  if (redisUrl && redisToken) {
+    redis = new Redis({
+      url: redisUrl,
+      token: redisToken,
+    })
+  }
+} catch (error) {
+  console.warn("Upstash Redis not configured, eval operations will be skipped")
+}
 
 // Types for the eval system
 export interface LocationEval {
@@ -51,10 +62,21 @@ const KEYS = {
   matchingStats: "kai:stats:matching",
 }
 
+// Helper function to check if Redis is available
+function isRedisAvailable(): boolean {
+  return redis !== null
+}
+
 // ========== LOCATION EVALS ==========
 
 export async function logLocationEval(eval_: Omit<LocationEval, "id" | "timestamp">): Promise<string> {
   const id = `loc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  
+  if (!isRedisAvailable()) {
+    console.warn("Redis not available, location eval not logged")
+    return id
+  }
+
   const fullEval: LocationEval = {
     ...eval_,
     id,
@@ -62,7 +84,7 @@ export async function logLocationEval(eval_: Omit<LocationEval, "id" | "timestam
   }
 
   // Store in a sorted set by timestamp for easy retrieval
-  await redis.zadd(KEYS.locationEvals, {
+  await redis!.zadd(KEYS.locationEvals, {
     score: fullEval.timestamp,
     member: JSON.stringify(fullEval),
   })
@@ -74,7 +96,11 @@ export async function logLocationEval(eval_: Omit<LocationEval, "id" | "timestam
 }
 
 export async function getLocationEvals(limit = 100): Promise<LocationEval[]> {
-  const results = await redis.zrange(KEYS.locationEvals, -limit, -1, { rev: true })
+  if (!isRedisAvailable()) {
+    return []
+  }
+
+  const results = await redis!.zrange(KEYS.locationEvals, -limit, -1, { rev: true })
   return results.map((r) => (typeof r === "string" ? JSON.parse(r) : r))
 }
 
@@ -85,6 +111,8 @@ export async function correctLocationEval(
   lat: number,
   lng: number,
 ): Promise<void> {
+  if (!isRedisAvailable()) return
+
   // Find and update the eval
   const evals = await getLocationEvals(1000)
   const evalToCorrect = evals.find((e) => e.id === evalId)
@@ -103,18 +131,24 @@ export async function correctLocationEval(
     })
 
     // Increment correction stats
-    await redis.hincrby(KEYS.locationStats, "corrections", 1)
+    await redis!.hincrby(KEYS.locationStats, "corrections", 1)
   }
 }
 
 async function updateLocationStats(confidence: string, source: string): Promise<void> {
-  await redis.hincrby(KEYS.locationStats, "total", 1)
-  await redis.hincrby(KEYS.locationStats, `confidence_${confidence}`, 1)
-  await redis.hincrby(KEYS.locationStats, `source_${source}`, 1)
+  if (!isRedisAvailable()) return
+
+  await redis!.hincrby(KEYS.locationStats, "total", 1)
+  await redis!.hincrby(KEYS.locationStats, `confidence_${confidence}`, 1)
+  await redis!.hincrby(KEYS.locationStats, `source_${source}`, 1)
 }
 
 export async function getLocationStats(): Promise<Record<string, number>> {
-  const stats = await redis.hgetall(KEYS.locationStats)
+  if (!isRedisAvailable()) {
+    return {}
+  }
+
+  const stats = await redis!.hgetall(KEYS.locationStats)
   const result: Record<string, number> = {}
   for (const [key, value] of Object.entries(stats || {})) {
     result[key] = typeof value === "number" ? value : Number.parseInt(value as string, 10) || 0
@@ -125,21 +159,27 @@ export async function getLocationStats(): Promise<Record<string, number>> {
 // ========== LEARNED LOCATIONS (Self-Learning) ==========
 
 export async function learnLocation(location: LearnedLocation): Promise<void> {
+  if (!isRedisAvailable()) return
+
   const key = location.alias.toLowerCase().trim()
-  await redis.hset(KEYS.learnedLocations, {
+  await redis!.hset(KEYS.learnedLocations, {
     [key]: JSON.stringify(location),
   })
 }
 
 export async function getLearnedLocation(alias: string): Promise<LearnedLocation | null> {
+  if (!isRedisAvailable()) return null
+
   const key = alias.toLowerCase().trim()
-  const result = await redis.hget(KEYS.learnedLocations, key)
+  const result = await redis!.hget(KEYS.learnedLocations, key)
   if (!result) return null
   return typeof result === "string" ? JSON.parse(result) : result
 }
 
 export async function getAllLearnedLocations(): Promise<LearnedLocation[]> {
-  const all = await redis.hgetall(KEYS.learnedLocations)
+  if (!isRedisAvailable()) return []
+
+  const all = await redis!.hgetall(KEYS.learnedLocations)
   if (!all) return []
   return Object.values(all).map((v) => (typeof v === "string" ? JSON.parse(v) : v))
 }
@@ -154,20 +194,28 @@ export async function incrementLocationUse(alias: string): Promise<void> {
 }
 
 export async function deleteLearnedLocation(alias: string): Promise<void> {
-  await redis.hdel(KEYS.learnedLocations, alias.toLowerCase().trim())
+  if (!isRedisAvailable()) return
+
+  await redis!.hdel(KEYS.learnedLocations, alias.toLowerCase().trim())
 }
 
 // ========== MATCHING EVALS ==========
 
 export async function logMatchingEval(eval_: Omit<MatchingEval, "id" | "timestamp">): Promise<string> {
   const id = `match_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  
+  if (!isRedisAvailable()) {
+    console.warn("Redis not available, matching eval not logged")
+    return id
+  }
+
   const fullEval: MatchingEval = {
     ...eval_,
     id,
     timestamp: Date.now(),
   }
 
-  await redis.zadd(KEYS.matchingEvals, {
+  await redis!.zadd(KEYS.matchingEvals, {
     score: fullEval.timestamp,
     member: JSON.stringify(fullEval),
   })
@@ -179,7 +227,9 @@ export async function logMatchingEval(eval_: Omit<MatchingEval, "id" | "timestam
 }
 
 export async function getMatchingEvals(limit = 100): Promise<MatchingEval[]> {
-  const results = await redis.zrange(KEYS.matchingEvals, -limit, -1, { rev: true })
+  if (!isRedisAvailable()) return []
+
+  const results = await redis!.zrange(KEYS.matchingEvals, -limit, -1, { rev: true })
   return results.map((r) => (typeof r === "string" ? JSON.parse(r) : r))
 }
 
@@ -188,6 +238,8 @@ export async function updateMatchingEvalOutcome(
   successfulBooking: boolean,
   customerRating?: number,
 ): Promise<void> {
+  if (!isRedisAvailable()) return
+
   const evals = await getMatchingEvals(1000)
   const evalToUpdate = evals.find((e) => e.id === evalId)
 
@@ -196,31 +248,35 @@ export async function updateMatchingEvalOutcome(
     evalToUpdate.customerRating = customerRating
 
     // Re-store with updated data
-    await redis.zrem(KEYS.matchingEvals, JSON.stringify({ ...evalToUpdate, successfulBooking: !successfulBooking }))
-    await redis.zadd(KEYS.matchingEvals, {
+    await redis!.zrem(KEYS.matchingEvals, JSON.stringify({ ...evalToUpdate, successfulBooking: !successfulBooking }))
+    await redis!.zadd(KEYS.matchingEvals, {
       score: evalToUpdate.timestamp,
       member: JSON.stringify(evalToUpdate),
     })
 
     // Update success stats
     if (successfulBooking) {
-      await redis.hincrby(KEYS.matchingStats, "successful_bookings", 1)
+      await redis!.hincrby(KEYS.matchingStats, "successful_bookings", 1)
     }
     if (customerRating) {
-      await redis.hincrbyfloat(KEYS.matchingStats, "total_rating", customerRating)
-      await redis.hincrby(KEYS.matchingStats, "rating_count", 1)
+      await redis!.hincrbyfloat(KEYS.matchingStats, "total_rating", customerRating)
+      await redis!.hincrby(KEYS.matchingStats, "rating_count", 1)
     }
   }
 }
 
 async function updateMatchingStats(eval_: Omit<MatchingEval, "id" | "timestamp">): Promise<void> {
-  await redis.hincrby(KEYS.matchingStats, "total_matches", 1)
-  await redis.hincrby(KEYS.matchingStats, `tier_${eval_.assignedTier}`, 1)
-  await redis.hincrby(KEYS.matchingStats, "total_caterers_matched", eval_.caterersMatched)
+  if (!isRedisAvailable()) return
+
+  await redis!.hincrby(KEYS.matchingStats, "total_matches", 1)
+  await redis!.hincrby(KEYS.matchingStats, `tier_${eval_.assignedTier}`, 1)
+  await redis!.hincrby(KEYS.matchingStats, "total_caterers_matched", eval_.caterersMatched)
 }
 
 export async function getMatchingStats(): Promise<Record<string, number>> {
-  const stats = await redis.hgetall(KEYS.matchingStats)
+  if (!isRedisAvailable()) return {}
+
+  const stats = await redis!.hgetall(KEYS.matchingStats)
   const result: Record<string, number> = {}
   for (const [key, value] of Object.entries(stats || {})) {
     result[key] = typeof value === "number" ? value : Number.parseFloat(value as string) || 0

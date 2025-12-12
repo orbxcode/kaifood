@@ -3,11 +3,21 @@ import { createClient } from "@/lib/supabase/server"
 import { generateText } from "ai"
 import { Index } from "@upstash/vector"
 
-// Initialize Upstash Vector
-const vectorIndex = new Index({
-  url: process.env.KV_REST_API_URL!,
-  token: process.env.KV_REST_API_TOKEN!,
-})
+// Initialize Upstash Vector (optional)
+let vectorIndex: Index | null = null
+try {
+  const vectorUrl = process.env.UPSTASH_VECTOR_REST_URL
+  const vectorToken = process.env.UPSTASH_VECTOR_REST_TOKEN
+  
+  if (vectorUrl && vectorToken) {
+    vectorIndex = new Index({
+      url: vectorUrl,
+      token: vectorToken,
+    })
+  }
+} catch (error) {
+  console.warn("Upstash Vector not configured, vector operations will be skipped")
+}
 
 export async function POST(request: Request) {
   try {
@@ -61,36 +71,50 @@ Return only valid JSON, no explanation.`,
       console.error("Failed to parse extracted attributes")
     }
 
-    // Upsert vector embedding
+    // Upsert vector embedding (if available)
     const embeddingId = `caterer_${catererId}`
+    let vectorOperationSuccess = false
 
-    await vectorIndex.upsert({
-      id: embeddingId,
-      data: catererText,
-      metadata: {
-        type: "caterer",
-        catererId,
-        businessName: caterer.business_name,
-        city: caterer.city,
-        cuisineTypes: caterer.cuisine_types,
-        dietaryCapabilities: caterer.dietary_capabilities,
-      },
-    })
+    if (vectorIndex) {
+      try {
+        await vectorIndex.upsert({
+          id: embeddingId,
+          data: catererText,
+          metadata: {
+            type: "caterer",
+            catererId,
+            businessName: caterer.business_name,
+            city: caterer.city,
+            cuisineTypes: caterer.cuisine_types,
+            dietaryCapabilities: caterer.dietary_capabilities,
+          },
+        })
+        vectorOperationSuccess = true
+      } catch (error) {
+        console.warn("Vector upsert failed:", error)
+      }
+    }
 
-    // Update caterer with extracted attributes and embedding ID
+    // Update caterer with extracted attributes and embedding ID (if vector operation succeeded)
+    const updateData: any = {
+      extracted_attributes: extractedAttributes,
+      last_extracted_at: new Date().toISOString(),
+    }
+
+    if (vectorOperationSuccess) {
+      updateData.embedding_id = embeddingId
+    }
+
     await supabase
       .from("caterers")
-      .update({
-        extracted_attributes: extractedAttributes,
-        embedding_id: embeddingId,
-        last_extracted_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq("id", catererId)
 
     return NextResponse.json({
       success: true,
-      embeddingId,
+      embeddingId: vectorOperationSuccess ? embeddingId : null,
       extractedAttributes,
+      vectorEnabled: !!vectorIndex,
     })
   } catch (error) {
     console.error("Caterer extraction error:", error)
