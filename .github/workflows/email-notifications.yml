@@ -17,15 +17,48 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Health Check
+        run: |
+          echo "🔍 Checking API health..."
+          
+          # Check if the API endpoint is accessible
+          health_response=$(curl -s -w "%{http_code}" \
+            -X GET \
+            "${{ secrets.APP_URL }}/api/notifications/process-queue")
+          
+          health_code="${health_response: -3}"
+          health_body="${health_response%???}"
+          
+          echo "🏥 Health Check Status: $health_code"
+          echo "🏥 Health Response: $health_body"
+          
+          if [ "$health_code" -ne 200 ]; then
+            echo "⚠️ API health check failed, but continuing with processing..."
+          fi
+
       - name: Process Email Notifications
         run: |
           echo "🚀 Processing email notification queue..."
+          echo "🔗 Target URL: ${{ secrets.APP_URL }}/api/notifications/process-queue"
+          
+          # Validate required secrets
+          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "❌ CRON_SECRET is not set"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.APP_URL }}" ]; then
+            echo "❌ APP_URL is not set"
+            exit 1
+          fi
           
           # Make the API call to process email queue
           response=$(curl -s -w "%{http_code}" \
             -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json" \
+            -H "User-Agent: GitHub-Actions-Email-Processor" \
+            --max-time 30 \
             "${{ secrets.APP_URL }}/api/notifications/process-queue")
           
           # Extract HTTP status code (last 3 characters)
@@ -38,9 +71,27 @@ jobs:
           # Check if the request was successful
           if [ "$http_code" -eq 200 ]; then
             echo "✅ Email queue processed successfully"
+            
+            # Try to parse and display processing stats
+            if command -v jq &> /dev/null; then
+              processed=$(echo "$response_body" | jq -r '.processed // "unknown"')
+              failed=$(echo "$response_body" | jq -r '.failed // "unknown"')
+              total=$(echo "$response_body" | jq -r '.total // "unknown"')
+              echo "📈 Stats: Processed=$processed, Failed=$failed, Total=$total"
+            fi
           else
             echo "❌ Failed to process email queue (HTTP $http_code)"
-            echo "Response: $response_body"
+            echo "🔍 Full Response: $response_body"
+            
+            # Don't fail immediately for certain status codes
+            if [ "$http_code" -eq 401 ]; then
+              echo "🔐 Authentication failed - check CRON_SECRET"
+            elif [ "$http_code" -eq 404 ]; then
+              echo "🔍 Endpoint not found - check APP_URL"
+            elif [ "$http_code" -eq 500 ]; then
+              echo "💥 Server error - check application logs"
+            fi
+            
             exit 1
           fi
 
