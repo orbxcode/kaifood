@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import {
   ChefHat,
   Calendar,
@@ -55,40 +56,17 @@ export function CatererDashboard({ profile, caterer, matches }: CatererDashboard
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-50 via-orange-50 to-amber-50">
       {/* Header */}
-      <header className="border-b border-border/50 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center">
-                <ChefHat className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-xl font-semibold text-foreground">Kai</span>
-            </Link>
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="w-5 h-5" />
-                {pendingMatches.length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-rose-500 to-orange-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {pendingMatches.length}
-                  </span>
-                )}
-              </Button>
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/caterer/profile">
-                  <Settings className="w-4 h-4 mr-2" />
-                  Profile
-                </Link>
-              </Button>
-              <Avatar className="h-9 w-9 ring-2 ring-white shadow-md">
-                <AvatarImage src={profile.avatar_url || undefined} />
-                <AvatarFallback className="bg-gradient-to-br from-rose-400 to-orange-400 text-white">
-                  {caterer?.business_name?.charAt(0) || "C"}
-                </AvatarFallback>
-              </Avatar>
-            </div>
-          </div>
-        </div>
-      </header>
+      <DashboardHeader 
+        user={{
+          id: profile.id,
+          email: profile.email,
+          full_name: profile.full_name,
+          avatar_url: profile.avatar_url,
+          user_type: 'caterer',
+          is_admin: profile.is_admin
+        }}
+        notifications={pendingMatches.length}
+      />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}

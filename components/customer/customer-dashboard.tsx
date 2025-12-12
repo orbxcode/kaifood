@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { ChefHat, Plus, Calendar, Users, MapPin, Star, ArrowRight, Clock, Sparkles } from "lucide-react"
 import type { Profile, EventRequest, Match } from "@/lib/types"
 import { formatDistanceToNow, format } from "date-fns"
@@ -30,27 +31,17 @@ export function CustomerDashboard({ profile, requests }: CustomerDashboardProps)
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-                <ChefHat className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <span className="text-xl font-semibold text-foreground">Kai</span>
-            </Link>
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/customer/requests">My Requests</Link>
-              </Button>
-              <Avatar className="h-9 w-9">
-                <AvatarImage src={profile.avatar_url || undefined} />
-                <AvatarFallback>{profile.full_name?.charAt(0) || "U"}</AvatarFallback>
-              </Avatar>
-            </div>
-          </div>
-        </div>
-      </header>
+      <DashboardHeader 
+        user={{
+          id: profile.id,
+          email: profile.email,
+          full_name: profile.full_name,
+          avatar_url: profile.avatar_url,
+          user_type: 'customer',
+          is_admin: profile.is_admin
+        }}
+        notifications={0}
+      />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
