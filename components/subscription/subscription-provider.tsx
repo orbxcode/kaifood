@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createBrowserClient } from '@supabase/ssr'
 import { useSubscription, type CatererSubscription, type SubscriptionPlan } from '@/lib/hooks/use-subscription'
 
 interface SubscriptionContextType {
@@ -67,7 +67,10 @@ export function PaystackSubscriptionHandler({
   onError?: (error: any) => void
 }) {
   const { updateSubscriptionStatus } = useSubscriptionContext()
-  const supabase = createClientComponentClient()
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
 
   useEffect(() => {
     // Listen for Paystack webhook events
